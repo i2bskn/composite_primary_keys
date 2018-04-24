@@ -20,32 +20,32 @@ module ActiveRecord
         end
       end
 
-      def _update_record(values, id, id_was) # :nodoc:
-        # # CPK
-        # if self.composite?
-        #   relation = @klass.unscoped.where(cpk_id_predicate(@klass.arel_table, @klass.primary_key, id_was || id))
-        # else
-        #   relation = scope.where(@klass.primary_key => (id_was || id))
-        # end
-
-        # CPK
-        # bind = predicate_builder.build_bind_attribute(primary_key, id_was || id)
-        # um = arel_table.where(
-        #     arel_attribute(primary_key).eq(bind)
-        # ).compile_update(_substitute_values(values), primary_key)
-
-        # CPK
+      def _update_record(values, constraints) # :nodoc:
         if self.composite?
-          predicate = cpk_id_predicate(arel_table, primary_key, id_was || id)
+          predicate = cpk_id_predicate(arel_table, primary_key, constraints[primary_key])
           um = arel_table.where(predicate).compile_update(_substitute_values(values), primary_key)
         else
-          bind = predicate_builder.build_bind_attribute(primary_key, id_was || id)
+          constraints = _substitute_values(constraints).map { |attr, bind| attr.eq(bind) }
+
           um = arel_table.where(
-              arel_attribute(primary_key).eq(bind)
+            constraints.reduce(&:and)
           ).compile_update(_substitute_values(values), primary_key)
         end
 
         connection.update(um, "#{self} Update")
+      end
+
+      def _delete_record(constraints) # :nodoc:
+        dm = Arel::DeleteManager.new
+        dm.from(arel_table)
+
+        if self.composite?
+          dm.wheres = [cpk_id_predicate(arel_table, primary_key, constraints[primary_key])]
+        else
+          dm.wheres = _substitute_values(constraints).map { |attr, bind| attr.eq(bind) }
+        end
+
+        connection.delete(dm, "#{self} Destroy")
       end
     end
 
